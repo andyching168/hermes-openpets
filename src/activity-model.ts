@@ -1,9 +1,12 @@
 import type { NormalizedEvent } from "./event-normalizer.ts";
+import { toolLabel } from "./tool-label.ts";
 import type { ActivityModel, HermesPetState } from "./pet-state.ts";
 
 export interface ActivitySnapshot extends ActivityModel {
   /** Set when Hermes itself publishes a pet state (Native Mode). */
   native: HermesPetState | null;
+  /** Sanitized label of the running tool, if any. */
+  toolLabel: string | null;
 }
 
 const NATIVE_STATES = new Set<string>(["idle", "wave", "run", "failed", "review", "jump", "waiting"]);
@@ -17,6 +20,7 @@ export class ActivityTracker {
   private busy = false;
   private tools = 0;
   private reasoning = false;
+  private lastTool: string | undefined;
   private native: HermesPetState | null = null;
   private pulses = { error: false, justCompleted: false, celebrate: false };
 
@@ -54,6 +58,7 @@ export class ActivityTracker {
         return;
       case "TOOL_STARTED":
         this.tools += 1;
+        this.lastTool = ev.toolName;
         this.reasoning = false;
         return;
       case "TOOL_COMPLETED":
@@ -95,6 +100,7 @@ export class ActivityTracker {
       justCompleted: this.pulses.justCompleted,
       celebrate: this.pulses.celebrate,
       native: this.native,
+      toolLabel: this.tools > 0 ? toolLabel(this.lastTool) : null,
     };
   }
 

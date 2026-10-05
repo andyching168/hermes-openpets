@@ -63,10 +63,10 @@ export default {
           return settings.transientDurationMs;
         },
         showCompletionAnimation: () => settings.showCompletionAnimation,
-        emit: (state) => {
+        emit: (state, detail) => {
           if (!settings.enabled) return;
           log(`state -> ${state}`);
-          void pets.setState(state);
+          void pets.setState(state, { text: settings.showToolActivity ? detail : undefined });
         },
       } as ConstructorParameters<typeof StatePolicy>[0]);
 

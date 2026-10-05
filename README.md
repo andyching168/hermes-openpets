@@ -48,7 +48,8 @@ pet state). Enable `debugLogging` in plugin storage for `[hermes-openpets]` logs
 | Hermes activity | Pet |
 |---|---|
 | idle | idle |
-| busy / tool running | working |
+| busy | working |
+| tool running | working + bubble ("Running terminal…", "Searching…", "Using browser…", "Running Python…", "Editing files…") |
 | reasoning | thinking |
 | turn complete | waving (1.6 s) → re-evaluated |
 | error / failed turn | error (1.6 s) → re-evaluated |
@@ -58,7 +59,7 @@ A (busy + events + focused session), B (busy + events), C (busy only → idle/wo
 D (unsupported → disabled, logged). If Hermes later exposes `host.state.petState`,
 Native Mode is used automatically. `waiting` is intentionally not emitted until a
 public SDK signal for approval/clarify exists (v0.3). Only the focused session
-drives the pet. No prompts, args, paths or tool output are ever sent.
+drives the pet. No prompts, args, paths or tool output are ever sent: bubbles use a fixed list of category strings that the relay also enforces. Set `showToolActivity: false` to disable bubbles.
 
 Fail-open: any error (OpenPets down, schema change, exception) is swallowed;
 repeated failures back off (5 s → 15 s → 60 s) instead of retrying in a loop.

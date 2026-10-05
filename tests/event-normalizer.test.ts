@@ -42,3 +42,34 @@ test("completion pulses once; busy=false clears stale flags", () => {
   t.clearPulses();
   assert.equal(t.snapshot().justCompleted, false);
 });
+
+import { toolLabel } from "../src/tool-label.ts";
+import { StatePolicy } from "../src/state-policy.ts";
+
+test("tool labels are sanitized categories only", () => {
+  assert.equal(toolLabel("terminal"), "Running terminal…");
+  assert.equal(toolLabel("web_search"), "Searching…");
+  assert.equal(toolLabel("browser_click"), "Using browser…");
+  assert.equal(toolLabel("my_secret_internal_tool /home/x --token=abc"), "Working…");
+});
+
+test("snapshot carries label only while a tool runs; policy re-emits on tool change", () => {
+  const t = new ActivityTracker();
+  t.apply({ type: "BUSY_CHANGED", busy: true });
+  assert.equal(t.snapshot().toolLabel, null);
+  t.apply({ type: "TOOL_STARTED", toolName: "terminal" });
+  assert.equal(t.snapshot().toolLabel, "Running terminal…");
+
+  let now = 0;
+  const q: Array<[number, () => void]> = [];
+  const out: Array<[string, string | undefined]> = [];
+  const p = new StatePolicy({
+    timers: { now: () => now, setTimeout: (fn, ms) => (q.push([now + ms, fn]), () => {}) },
+    emit: (s, d) => out.push([s, d]),
+  });
+  const run = (to: number) => { now = to; q.splice(0).forEach(([, f]) => f()); };
+  p.update(t.snapshot()); run(500);
+  t.apply({ type: "TOOL_COMPLETED" }); t.apply({ type: "TOOL_STARTED", toolName: "web_search" });
+  p.update(t.snapshot()); run(1500);
+  assert.deepEqual(out, [["run", "Running terminal…"], ["run", "Searching…"]]);
+});

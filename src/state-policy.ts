@@ -8,7 +8,7 @@ export interface Timers {
 }
 
 export interface PolicyOptions {
-  emit: (state: HermesPetState) => void;
+  emit: (state: HermesPetState, detail?: string) => void;
   timers: Timers;
   transientMs?: number;
   debounceMs?: number;
@@ -23,6 +23,8 @@ export interface PolicyOptions {
  */
 export class StatePolicy {
   private last: HermesPetState | null = "idle"; // pet assumed idle at start
+  private lastDetail: string | undefined;
+  private detail: string | undefined;
   private lastEmitAt = -Infinity;
   private transient: HermesPetState | null = null;
   private cancelTransient: (() => void) | null = null;
@@ -45,6 +47,7 @@ export class StatePolicy {
       return;
     }
     const pulse = this.pulseState(a);
+    this.detail = a.busy ? (a.toolLabel ?? undefined) : undefined;
     this.steady = derivePetState(withLiveness({ ...a, error: false, celebrate: false, justCompleted: false }));
     if (pulse) this.startTransient(pulse);
     this.schedule();
@@ -98,18 +101,21 @@ export class StatePolicy {
     this.cancelPending?.();
     this.cancelPending = null;
     const want = this.desired();
-    if (want === this.last) return;
+    const detail = want === "run" ? this.detail : undefined;
+    if (want === this.last && detail === this.lastDetail) return;
     const debounce = this.o.debounceMs ?? 150;
     const dwell = this.o.minDwellMs ?? 400;
     const wait = Math.max(debounce, this.lastEmitAt + dwell - this.o.timers.now());
     this.cancelPending = this.o.timers.setTimeout(() => {
       this.cancelPending = null;
       const state = this.desired();
-      if (state === this.last) return;
+      const d = state === "run" ? this.detail : undefined;
+      if (state === this.last && d === this.lastDetail) return;
       this.last = state;
+      this.lastDetail = d;
       this.lastEmitAt = this.o.timers.now();
       try {
-        this.o.emit(state);
+        this.o.emit(state, d);
       } catch {
         /* fail open */
       }

@@ -1,6 +1,17 @@
 // src/plugin.ts
 import { host, PALETTE_AREA } from "@hermes/plugin-sdk";
 
+// src/tool-label.ts
+function toolLabel(toolName) {
+  const n = (toolName ?? "").toLowerCase();
+  if (/terminal|shell|bash|exec|command/.test(n)) return "Running terminal\u2026";
+  if (/browser|navigate|click|screenshot/.test(n)) return "Using browser\u2026";
+  if (/search|web|fetch|grep|find/.test(n)) return "Searching\u2026";
+  if (/python|code_exec|jupyter|notebook/.test(n)) return "Running Python\u2026";
+  if (/file|read|write|edit|patch|diff/.test(n)) return "Editing files\u2026";
+  return "Working\u2026";
+}
+
 // src/activity-model.ts
 var NATIVE_STATES = /* @__PURE__ */ new Set(["idle", "wave", "run", "failed", "review", "jump", "waiting"]);
 var ActivityTracker = class {
@@ -8,6 +19,7 @@ var ActivityTracker = class {
   busy = false;
   tools = 0;
   reasoning = false;
+  lastTool;
   native = null;
   pulses = { error: false, justCompleted: false, celebrate: false };
   apply(ev) {
@@ -44,6 +56,7 @@ var ActivityTracker = class {
         return;
       case "TOOL_STARTED":
         this.tools += 1;
+        this.lastTool = ev.toolName;
         this.reasoning = false;
         return;
       case "TOOL_COMPLETED":
@@ -82,7 +95,8 @@ var ActivityTracker = class {
       error: this.pulses.error,
       justCompleted: this.pulses.justCompleted,
       celebrate: this.pulses.celebrate,
-      native: this.native
+      native: this.native,
+      toolLabel: this.tools > 0 ? toolLabel(this.lastTool) : null
     };
   }
   clearPulses() {
@@ -211,7 +225,7 @@ function createOpenPetsAdapter(opts) {
   let failures = 0;
   let retryAt = 0;
   let lastSent = null;
-  let wanted = null;
+  const key = (s, t) => `${s}|${t ?? ""}`;
   const markDown = (why) => {
     const wasUp = available;
     available = false;
@@ -240,17 +254,17 @@ function createOpenPetsAdapter(opts) {
       if (timer) clearTimeout(timer);
     }
   }
-  async function send(state) {
+  async function send(state, text) {
     try {
       const res = await request("/react", {
         method: "POST",
         headers: { "content-type": "text/plain" },
-        body: JSON.stringify({ reaction: REACTION_BY_STATE[state] })
+        body: JSON.stringify(text ? { reaction: REACTION_BY_STATE[state], text } : { reaction: REACTION_BY_STATE[state] })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json().catch(() => ({}));
       if (body.ok === false) throw new Error("relay could not reach OpenPets");
-      lastSent = state;
+      lastSent = key(state, text);
       markUp();
     } catch (e) {
       markDown(e instanceof Error ? e.message : "error");
@@ -271,18 +285,16 @@ function createOpenPetsAdapter(opts) {
         return false;
       }
     },
-    async setState(state) {
+    async setState(state, options) {
       try {
-        wanted = state;
-        if (state === lastSent) return;
+        if (key(state, options?.text) === lastSent) return;
         if (!available && now() < retryAt) return;
-        await send(state);
+        await send(state, options?.text);
       } catch {
       }
     },
     async reset() {
       try {
-        wanted = null;
         if (available || now() >= retryAt) await send("idle");
       } catch {
       }
@@ -310,6 +322,8 @@ function withLiveness(a) {
 var StatePolicy = class {
   last = "idle";
   // pet assumed idle at start
+  lastDetail;
+  detail;
   lastEmitAt = -Infinity;
   transient = null;
   cancelTransient = null;
@@ -329,6 +343,7 @@ var StatePolicy = class {
       return;
     }
     const pulse = this.pulseState(a);
+    this.detail = a.busy ? a.toolLabel ?? void 0 : void 0;
     this.steady = derivePetState(withLiveness({ ...a, error: false, celebrate: false, justCompleted: false }));
     if (pulse) this.startTransient(pulse);
     this.schedule();
@@ -374,18 +389,21 @@ var StatePolicy = class {
     this.cancelPending?.();
     this.cancelPending = null;
     const want = this.desired();
-    if (want === this.last) return;
+    const detail = want === "run" ? this.detail : void 0;
+    if (want === this.last && detail === this.lastDetail) return;
     const debounce = this.o.debounceMs ?? 150;
     const dwell = this.o.minDwellMs ?? 400;
     const wait = Math.max(debounce, this.lastEmitAt + dwell - this.o.timers.now());
     this.cancelPending = this.o.timers.setTimeout(() => {
       this.cancelPending = null;
       const state = this.desired();
-      if (state === this.last) return;
+      const d = state === "run" ? this.detail : void 0;
+      if (state === this.last && d === this.lastDetail) return;
       this.last = state;
+      this.lastDetail = d;
       this.lastEmitAt = this.o.timers.now();
       try {
-        this.o.emit(state);
+        this.o.emit(state, d);
       } catch {
       }
     }, wait);
@@ -437,10 +455,10 @@ var plugin_default = {
           return settings.transientDurationMs;
         },
         showCompletionAnimation: () => settings.showCompletionAnimation,
-        emit: (state) => {
+        emit: (state, detail) => {
           if (!settings.enabled) return;
           log(`state -> ${state}`);
-          void pets.setState(state);
+          void pets.setState(state, { text: settings.showToolActivity ? detail : void 0 });
         }
       });
       const adapter = createHermesAdapter(host, ctx, log);

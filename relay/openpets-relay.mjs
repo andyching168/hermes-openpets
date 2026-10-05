@@ -14,6 +14,7 @@ import { join } from "node:path";
 
 const PORT = Number(process.env.OPENPETS_RELAY_PORT ?? 3001);
 const HOST = "127.0.0.1";
+const TEXTS = new Set(["Running terminal…", "Searching…", "Using browser…", "Running Python…", "Editing files…", "Working…"]);
 const REACTIONS = new Set(["idle", "thinking", "working", "editing", "running", "testing", "waiting", "waving", "success", "error", "celebrating"]);
 
 function discoveryPath() {
@@ -108,9 +109,10 @@ const server = createServer(async (req, res) => {
         raw += c;
         if (raw.length > 1024) return send(res, 413, { ok: false });
       }
-      const { reaction } = JSON.parse(raw);
-      if (!REACTIONS.has(reaction)) return send(res, 400, { ok: false });
-      await ipc("pet.react", { reaction });
+      const { reaction, text } = JSON.parse(raw);
+      if (!REACTIONS.has(reaction) || (text !== undefined && !TEXTS.has(text))) return send(res, 400, { ok: false });
+      if (text) await ipc("pet.say", { message: text, reaction });
+      else await ipc("pet.react", { reaction });
       return send(res, 200, { ok: true });
     }
     send(res, 404, { ok: false });

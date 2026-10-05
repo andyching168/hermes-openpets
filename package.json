@@ -1,6 +1,6 @@
 {
   "name": "hermes-openpets",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A local-only Hermes Desktop plugin that mirrors Hermes agent activity to OpenPets without modifying Hermes itself.",
   "type": "module",
   "license": "MIT",

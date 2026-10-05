@@ -39,8 +39,8 @@ export function createOpenPetsAdapter(opts: OpenPetsAdapterOptions): OpenPetsAda
   let available = true;
   let failures = 0;
   let retryAt = 0;
-  let lastSent: HermesPetState | null = null;
-  let wanted: HermesPetState | null = null;
+  let lastSent: string | null = null;
+  const key = (s: HermesPetState, t?: string) => `${s}|${t ?? ""}`;
 
   const markDown = (why: string) => {
     const wasUp = available;
@@ -72,18 +72,18 @@ export function createOpenPetsAdapter(opts: OpenPetsAdapterOptions): OpenPetsAda
     }
   }
 
-  async function send(state: HermesPetState): Promise<void> {
+  async function send(state: HermesPetState, text?: string): Promise<void> {
     try {
       // text/plain keeps this a CORS "simple request" (no preflight).
       const res = await request("/react", {
         method: "POST",
         headers: { "content-type": "text/plain" },
-        body: JSON.stringify({ reaction: REACTION_BY_STATE[state] }),
+        body: JSON.stringify(text ? { reaction: REACTION_BY_STATE[state], text } : { reaction: REACTION_BY_STATE[state] }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
       if (body.ok === false) throw new Error("relay could not reach OpenPets");
-      lastSent = state;
+      lastSent = key(state, text);
       markUp();
     } catch (e) {
       markDown(e instanceof Error ? e.message : "error");
@@ -105,19 +105,17 @@ export function createOpenPetsAdapter(opts: OpenPetsAdapterOptions): OpenPetsAda
         return false;
       }
     },
-    async setState(state) {
+    async setState(state, options) {
       try {
-        wanted = state;
-        if (state === lastSent) return; // dedupe
+        if (key(state, options?.text) === lastSent) return; // dedupe
         if (!available && now() < retryAt) return; // stay quiet while unavailable
-        await send(state);
+        await send(state, options?.text);
       } catch {
         /* fail open */
       }
     },
     async reset() {
       try {
-        wanted = null;
         if (available || now() >= retryAt) await send("idle");
       } catch {
         /* fail open */
